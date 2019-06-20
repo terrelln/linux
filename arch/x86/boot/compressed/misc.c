@@ -12,6 +12,11 @@
  * High loaded stuff by Hans Lermen & Werner Almesberger, Feb. 1996
  */
 
+/* decompressors bring in EXPORT_SYMBOL which is meaningless and will
+ * cause compiler errors in some cases.
+ */
+#define __DISABLE_EXPORTS
+
 #include "misc.h"
 #include "error.h"
 #include "pgtable.h"
@@ -76,6 +81,10 @@ static int lines, cols;
 
 #ifdef CONFIG_KERNEL_LZ4
 #include "../../../../lib/decompress_unlz4.c"
+#endif
+
+#ifdef CONFIG_KERNEL_ZSTD
+#include "../../../../lib/decompress_unzstd.c"
 #endif
 /*
  * NOTE: When adding a new decompressor, please update the analysis in
