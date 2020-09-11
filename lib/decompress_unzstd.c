@@ -80,7 +80,8 @@
 #include <linux/zstd.h>
 
 /* 128MB is the maximum window size supported by zstd. */
-#define ZSTD_WINDOWSIZE_MAX	(1 << ZSTD_WINDOWLOG_MAX)
+#define UNZSTD_WINDOWLOG_MAX 27
+#define UNZSTD_WINDOWSIZE_MAX	(1 << UNZSTD_WINDOWLOG_MAX)
 /*
  * Size of the input and output buffers in multi-call mode.
  * Pick a larger size because it isn't used during kernel decompression,
@@ -91,27 +92,10 @@
 
 static int INIT handle_zstd_error(size_t ret, void (*error)(char *x))
 {
-	const int err = ZSTD_getErrorCode(ret);
-
-	if (!ZSTD_isError(ret))
+	if (!zstd_is_error(ret))
 		return 0;
 
-	switch (err) {
-	case ZSTD_error_memory_allocation:
-		error("ZSTD decompressor ran out of memory");
-		break;
-	case ZSTD_error_prefix_unknown:
-		error("Input is not in the ZSTD format (wrong magic bytes)");
-		break;
-	case ZSTD_error_dstSize_tooSmall:
-	case ZSTD_error_corruption_detected:
-	case ZSTD_error_checksum_wrong:
-		error("ZSTD-compressed data is corrupt");
-		break;
-	default:
-		error("ZSTD-compressed data is probably corrupt");
-		break;
-	}
+	error("ZSTD decompression failed");
 	return -1;
 }
 
@@ -124,28 +108,28 @@ static int INIT decompress_single(const u8 *in_buf, long in_len, u8 *out_buf,
 				  long out_len, long *in_pos,
 				  void (*error)(char *x))
 {
-	const size_t wksp_size = ZSTD_DCtxWorkspaceBound();
+	const size_t wksp_size = zstd_dctx_workspace_bound();
 	void *wksp = large_malloc(wksp_size);
-	ZSTD_DCtx *dctx = ZSTD_initDCtx(wksp, wksp_size);
+	zstd_dctx *dctx = zstd_init_dctx(wksp, wksp_size);
 	int err;
 	size_t ret;
 
 	if (dctx == NULL) {
-		error("Out of memory while allocating ZSTD_DCtx");
+		error("Out of memory while allocating zstd_dctx");
 		err = -1;
 		goto out;
 	}
 	/*
 	 * Find out how large the frame actually is, there may be junk at
-	 * the end of the frame that ZSTD_decompressDCtx() can't handle.
+	 * the end of the frame that zstd_decompress_dctx() can't handle.
 	 */
-	ret = ZSTD_findFrameCompressedSize(in_buf, in_len);
+	ret = zstd_find_frame_compressed_size(in_buf, in_len);
 	err = handle_zstd_error(ret, error);
 	if (err)
 		goto out;
 	in_len = (long)ret;
 
-	ret = ZSTD_decompressDCtx(dctx, out_buf, out_len, in_buf, in_len);
+	ret = zstd_decompress_dctx(dctx, out_buf, out_len, in_buf, in_len);
 	err = handle_zstd_error(ret, error);
 	if (err)
 		goto out;
@@ -167,14 +151,14 @@ static int INIT __unzstd(unsigned char *in_buf, long in_len,
 			 long *in_pos,
 			 void (*error)(char *x))
 {
-	ZSTD_inBuffer in;
-	ZSTD_outBuffer out;
-	ZSTD_frameParams params;
+	struct zstd_in_buffer in;
+	struct zstd_out_buffer out;
+	struct zstd_frame_params params;
 	void *in_allocated = NULL;
 	void *out_allocated = NULL;
 	void *wksp = NULL;
 	size_t wksp_size;
-	ZSTD_DStream *dstream;
+	zstd_dstream *dstream;
 	int err;
 	size_t ret;
 
@@ -238,13 +222,13 @@ static int INIT __unzstd(unsigned char *in_buf, long in_len,
 	out.size = out_len;
 
 	/*
-	 * We need to know the window size to allocate the ZSTD_DStream.
+	 * We need to know the window size to allocate the zstd_dstream.
 	 * Since we are streaming, we need to allocate a buffer for the sliding
-	 * window. The window size varies from 1 KB to ZSTD_WINDOWSIZE_MAX
+	 * window. The window size varies from 1 KB to UNZSTD_WINDOWSIZE_MAX
 	 * (8 MB), so it is important to use the actual value so as not to
 	 * waste memory when it is smaller.
 	 */
-	ret = ZSTD_getFrameParams(&params, in.src, in.size);
+	ret = zstd_get_frame_params(&params, in.src, in.size);
 	err = handle_zstd_error(ret, error);
 	if (err)
 		goto out;
@@ -253,19 +237,19 @@ static int INIT __unzstd(unsigned char *in_buf, long in_len,
 		err = -1;
 		goto out;
 	}
-	if (params.windowSize > ZSTD_WINDOWSIZE_MAX) {
+	if (params.window_size > UNZSTD_WINDOWSIZE_MAX) {
 		error("ZSTD-compressed data has too large a window size");
 		err = -1;
 		goto out;
 	}
 
 	/*
-	 * Allocate the ZSTD_DStream now that we know how much memory is
+	 * Allocate the zstd_dstream now that we know how much memory is
 	 * required.
 	 */
-	wksp_size = ZSTD_DStreamWorkspaceBound(params.windowSize);
+	wksp_size = zstd_dstream_workspace_bound(params.window_size);
 	wksp = large_malloc(wksp_size);
-	dstream = ZSTD_initDStream(params.windowSize, wksp, wksp_size);
+	dstream = zstd_init_dstream(params.window_size, wksp, wksp_size);
 	if (dstream == NULL) {
 		error("Out of memory while allocating ZSTD_DStream");
 		err = -1;
@@ -298,7 +282,7 @@ static int INIT __unzstd(unsigned char *in_buf, long in_len,
 			in.size = in_len;
 		}
 		/* Returns zero when the frame is complete. */
-		ret = ZSTD_decompressStream(dstream, &out, &in);
+		ret = zstd_decompress_stream(dstream, &out, &in);
 		err = handle_zstd_error(ret, error);
 		if (err)
 			goto out;

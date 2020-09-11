@@ -23,7 +23,7 @@
 *  Dependencies
 ******************************************/
 #include <linux/types.h> /* size_t */
-#include <linux/zstd.h>  /* enum list */
+#include "zstd.h"  /* enum list */
 
 /* ****************************************
 *  Compiler-specific
