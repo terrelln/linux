@@ -69,14 +69,15 @@ const char *zstd_get_error_name(size_t code);
  * From faster to stronger.
  */
 enum zstd_strategy {
-	zstd_fast,
-	zstd_dfast,
-	zstd_greedy,
-	zstd_lazy,
-	zstd_lazy2,
-	zstd_btlazy2,
-	zstd_btopt,
-	zstd_btopt2
+	zstd_fast = 1,
+	zstd_dfast = 2,
+	zstd_greedy = 3,
+	zstd_lazy = 4,
+	zstd_lazy2 = 5,
+	zstd_btlazy2 = 6,
+	zstd_btopt = 7,
+	zstd_btultra = 8,
+	zstd_btultra2 = 9
 };
 
 /**
@@ -257,7 +258,7 @@ struct zstd_out_buffer {
 
 /* ======   Streaming Compression   ====== */
 
-typedef struct ZSTD_CStream_s zstd_cstream;
+typedef struct ZSTD_CCtx_s zstd_cstream;
 
 /**
  * zstd_cstream_workspace_bound() - memory needed to initialize a zstd_cstream
@@ -353,7 +354,7 @@ size_t zstd_end_stream(zstd_cstream *cstream, struct zstd_out_buffer *output);
 
 /* ======   Streaming Decompression   ====== */
 
-typedef struct ZSTD_DStream_s zstd_dstream;
+typedef struct ZSTD_DCtx_s zstd_dstream;
 
 /**
  * zstd_dstream_workspace_bound() - memory needed to initialize a zstd_dstream
